@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	MaxZoneRunes       = 253
-	MaxAuthorityRunes  = 253
-	MaxNodeNameRunes   = 180
-	MaxRegionRunes     = 48
-	MinRequestKeyRunes = 8
-	MaxRequestKeyRunes = 64
-	MaxEntries         = 500
+	MaxZoneRunes        = 253
+	MaxAuthorityRunes   = 253
+	MaxNodeNameRunes    = 180
+	MaxRegionRunes      = 48
+	MinRequestKeyRunes  = 8
+	MaxRequestKeyRunes  = 64
+	MaxEntries          = 500
+	MaxReleaseNoteRunes = 500
 )
 
 type PlanCreateInput struct {
@@ -54,6 +55,31 @@ type ProbeInput struct {
 
 type AssessmentInput struct {
 	RequestKey string `json:"request_key"`
+}
+
+type ReleaseInput struct {
+	ReasonCategory string `json:"reason_category"`
+	ReasonNote     string `json:"reason_note"`
+}
+
+func NormalizeReleaseInput(input ReleaseInput) ReleaseInput {
+	input.ReasonCategory = strings.TrimSpace(strings.ToLower(input.ReasonCategory))
+	input.ReasonNote = strings.TrimSpace(input.ReasonNote)
+	return input
+}
+
+func ValidateReleaseInput(input ReleaseInput) error {
+	details := make(map[string]any)
+	if input.ReasonCategory != "" && !ValidReleaseReasonCategory(input.ReasonCategory) {
+		details["reason_category"] = "must be one of handover, maintenance, node_fault, plan_change, operator_request, other"
+	}
+	if count := utf8.RuneCountInString(input.ReasonNote); count > MaxReleaseNoteRunes {
+		details["reason_note"] = "must be at most 500 characters"
+	}
+	if len(details) > 0 {
+		return Validation("release input is invalid", details)
+	}
+	return nil
 }
 
 func NormalizePlanInput(input PlanCreateInput) PlanCreateInput {

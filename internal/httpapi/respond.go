@@ -40,6 +40,27 @@ func decode(w http.ResponseWriter, r *http.Request, target any) error {
 	return nil
 }
 
+// decodeOptional behaves like decode but treats an empty body as a zero-value
+// target, keeping legacy bodiless requests working.
+func decodeOptional(w http.ResponseWriter, r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, requestLimit)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return domain.Validation("request body must contain valid JSON", map[string]any{
+			"reason": err.Error(),
+		})
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return domain.Validation("request body must contain one JSON value", nil)
+	}
+	return nil
+}
+
 func sendData(w http.ResponseWriter, r *http.Request, status int, value any) {
 	sendJSON(w, status, successBody{
 		Data: value,

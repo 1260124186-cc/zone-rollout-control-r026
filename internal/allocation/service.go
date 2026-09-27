@@ -129,7 +129,11 @@ func (s *Service) Allocate(
 	return group, err
 }
 
-func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease, error) {
+func (s *Service) Release(ctx context.Context, leaseID string, input domain.ReleaseInput) (domain.NodeLease, error) {
+	input = domain.NormalizeReleaseInput(input)
+	if err := domain.ValidateReleaseInput(input); err != nil {
+		return domain.NodeLease{}, err
+	}
 	now := s.clock.Now().UTC()
 	var result domain.NodeLease
 	err := s.store.Write(ctx, func(state *domain.State) error {
@@ -137,7 +141,17 @@ func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease
 		if !ok {
 			return domain.NotFound("lease", leaseID)
 		}
-		if lease.State == domain.LeaseReleased || lease.State == domain.LeaseExpired {
+		if lease.State == domain.LeaseReleased {
+			if conflictsWithReleaseReason(lease, input) {
+				return domain.NewError(domain.CodeConflict, "lease was already released with a different reason", map[string]any{
+					"lease_id":        leaseID,
+					"reason_category": lease.ReleaseReasonCategory,
+				})
+			}
+			result = lease
+			return nil
+		}
+		if lease.State == domain.LeaseExpired {
 			result = lease
 			return nil
 		}
@@ -156,6 +170,8 @@ func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease
 		finishedAt := now
 		lease.State = domain.LeaseReleased
 		lease.FinishedAt = &finishedAt
+		lease.ReleaseReasonCategory = input.ReasonCategory
+		lease.ReleaseReasonNote = input.ReasonNote
 		state.Leases[leaseID] = lease
 		if node.State == domain.NodeLeased {
 			node.State = domain.NodeReady
@@ -163,11 +179,28 @@ func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease
 			node.UpdatedAt = now
 			state.Nodes[node.ID] = node
 		}
-		store.AddAudit(state, s.ids, "lease", leaseID, "released", now, nil)
+		store.AddAudit(state, s.ids, "lease", leaseID, "released", now, map[string]any{
+			"lease_id":        leaseID,
+			"plan_id":         lease.PlanID,
+			"node_id":         lease.NodeID,
+			"reason_category": input.ReasonCategory,
+			"reason_note":     input.ReasonNote,
+		})
 		result = lease
 		return nil
 	})
 	return result, err
+}
+
+// conflictsWithReleaseReason reports whether a repeated release carries a
+// reason that differs from the one recorded by the first release. A repeat
+// without any reason always replays the stored terminal state.
+func conflictsWithReleaseReason(lease domain.NodeLease, input domain.ReleaseInput) bool {
+	if input.ReasonCategory == "" && input.ReasonNote == "" {
+		return false
+	}
+	return input.ReasonCategory != lease.ReleaseReasonCategory ||
+		input.ReasonNote != lease.ReleaseReasonNote
 }
 
 func (s *Service) ExpireDue(ctx context.Context) (int, error) {

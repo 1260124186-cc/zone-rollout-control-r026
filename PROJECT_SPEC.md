@@ -56,6 +56,7 @@ Zone Rollout Control 是面向 DNS 运维人员的 Go HTTP 控制面。它把区
 - `state`：`claimed`、`reported`、`released` 或 `expired`。
 - `claimed_at`、`expires_at`、`finished_at`。
 - `probe_id`：成功登记探针后的结果标识。
+- `release_reason_category`、`release_reason_note`：提前释放时记录的可选原因类别和说明。
 
 ### LeaseGroup
 
@@ -107,6 +108,16 @@ ready --lease--> leased --report--> ready
 - 一个节点同一时刻最多有一个 `claimed` 租约。
 - 租约到期后不能提交探针。
 - 首次有效探针完成后，租约转为 `reported`，节点恢复 `ready`。
+
+### 租约释放原因
+
+- 释放请求可以不带正文，也可以提交可选的 `reason_category` 和 `reason_note`。
+- 原因类别只接受 `handover`、`maintenance`、`node_fault`、`plan_change`、`operator_request`、`other`；未知类别返回 `validation_failed`。
+- 说明裁剪首尾空白后最多 500 字符。
+- 首次释放把原因写入租约，并把原因与租约、计划和操作请求一起追加到审计。
+- 重复释放返回原租约并复用首次原因，不改写终态；不带原因的重复释放始终幂等。
+- 重复释放携带与首次不同的原因时返回 `conflict`，并发释放因此只有一个成功。
+- 已上报租约释放返回 `invalid_state`。
 
 ### 区域版本规则
 
@@ -282,5 +293,6 @@ ready --lease--> leased --report--> ready
 2. 节点分配、租约唯一性、幂等重放和无可用节点冲突。
 3. 探针首写、同键重放、同键异载荷冲突和释放冲突。
 4. 一致性通过、审核触发、最新结果查询和幂等重放。
+5. 释放原因记录、审计追加、重复释放复用首次原因、未知类别拒绝和并发释放冲突。
 
 每条探针使用独立临时目录，不访问外部网络，结束后关闭服务。

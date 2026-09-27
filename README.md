@@ -127,6 +127,17 @@ curl -sS -X PATCH http://127.0.0.1:8090/v1/leases/<lease_id>/probes \
   }'
 ```
 
+提前释放租约（正文可选；`reason_category` 只接受 `handover`、`maintenance`、`node_fault`、`plan_change`、`operator_request`、`other`）：
+
+```bash
+curl -sS -X PATCH http://127.0.0.1:8090/v1/leases/<lease_id>/release \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "reason_category": "handover",
+    "reason_note": "site handover to night shift"
+  }'
+```
+
 请求一致性判定：
 
 ```bash
@@ -174,7 +185,7 @@ curl -sS -X PATCH http://127.0.0.1:8090/v1/plans/<plan_id>/assessments \
 | `PATCH` | `/v1/plans/{id}/activate` | 激活计划 |
 | `PATCH` | `/v1/plans/{id}/complete` | 完成计划 |
 | `PATCH` | `/v1/plans/{id}/leases` | 给节点分配租约 |
-| `PATCH` | `/v1/leases/{id}/release` | 提前释放租约 |
+| `PATCH` | `/v1/leases/{id}/release` | 提前释放租约（可附原因类别和说明） |
 | `PATCH` | `/v1/leases/{id}/probes` | 登记探针并完成租约 |
 | `PATCH` | `/v1/plans/{id}/assessments` | 创建一致性判定 |
 | `GET` | `/v1/plans/{id}/assessments/latest` | 查询最近判定 |
@@ -187,6 +198,8 @@ curl -sS -X PATCH http://127.0.0.1:8090/v1/plans/<plan_id>/assessments \
 - 节点按 `ready -> leased -> ready` 变化，隔离节点不会被选中。
 - 一个节点同一时刻最多有一个 `claimed` 租约。
 - 相同请求键和相同内容可安全重放；同键异载荷返回 `idempotency_conflict`。
+- 释放租约可附带可选原因类别和说明，原因会写入租约并随租约、计划和请求一起进入审计。
+- 重复释放返回原租约并复用首次原因；携带不同原因的重复或并发释放返回 `conflict`，未知类别返回 `validation_failed`。
 - 一致性判定综合节点覆盖率、序列号、成功比例和最大延迟，返回 `consistent` 或 `review_required`。
 - 所有校验和冲突在快照替换前返回，不留下部分状态。
 
@@ -216,6 +229,7 @@ go run ./cmd/workflowprobe plan-revision-lifecycle
 go run ./cmd/workflowprobe node-lease-allocation
 go run ./cmd/workflowprobe probe-ingestion
 go run ./cmd/workflowprobe consistency-assessment
+go run ./cmd/workflowprobe lease-release-reasons
 ```
 
 探针不访问外部网络，也不依赖已有状态文件。

@@ -42,6 +42,30 @@ const (
 	EntryCNAME EntryType = "CNAME"
 )
 
+// Release reason categories accepted when a lease is released early.
+const (
+	ReleaseReasonHandover        = "handover"
+	ReleaseReasonMaintenance     = "maintenance"
+	ReleaseReasonNodeFault       = "node_fault"
+	ReleaseReasonPlanChange      = "plan_change"
+	ReleaseReasonOperatorRequest = "operator_request"
+	ReleaseReasonOther           = "other"
+)
+
+func ValidReleaseReasonCategory(value string) bool {
+	switch value {
+	case ReleaseReasonHandover,
+		ReleaseReasonMaintenance,
+		ReleaseReasonNodeFault,
+		ReleaseReasonPlanChange,
+		ReleaseReasonOperatorRequest,
+		ReleaseReasonOther:
+		return true
+	default:
+		return false
+	}
+}
+
 type ZoneEntry struct {
 	Owner string    `json:"owner"`
 	Type  EntryType `json:"type"`
@@ -84,15 +108,17 @@ type ResolverNode struct {
 }
 
 type NodeLease struct {
-	ID           string     `json:"id"`
-	PlanID       string     `json:"plan_id"`
-	NodeID       string     `json:"node_id"`
-	AllocationID string     `json:"allocation_id"`
-	State        LeaseState `json:"state"`
-	ClaimedAt    time.Time  `json:"claimed_at"`
-	ExpiresAt    time.Time  `json:"expires_at"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
-	ProbeID      string     `json:"probe_id,omitempty"`
+	ID                    string     `json:"id"`
+	PlanID                string     `json:"plan_id"`
+	NodeID                string     `json:"node_id"`
+	AllocationID          string     `json:"allocation_id"`
+	State                 LeaseState `json:"state"`
+	ClaimedAt             time.Time  `json:"claimed_at"`
+	ExpiresAt             time.Time  `json:"expires_at"`
+	FinishedAt            *time.Time `json:"finished_at,omitempty"`
+	ProbeID               string     `json:"probe_id,omitempty"`
+	ReleaseReasonCategory string     `json:"release_reason_category,omitempty"`
+	ReleaseReasonNote     string     `json:"release_reason_note,omitempty"`
 }
 
 type LeaseGroup struct {

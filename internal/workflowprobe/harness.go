@@ -14,6 +14,7 @@ import (
 
 	"solo-0014-zone-rollout-control/internal/allocation"
 	"solo-0014-zone-rollout-control/internal/assessment"
+	"solo-0014-zone-rollout-control/internal/domain"
 	"solo-0014-zone-rollout-control/internal/fleet"
 	"solo-0014-zone-rollout-control/internal/httpapi"
 	"solo-0014-zone-rollout-control/internal/plan"
@@ -76,6 +77,18 @@ func (h *harness) close() {
 	_ = h.server.Shutdown(ctx)
 	_ = h.listener.Close()
 	_ = os.RemoveAll(h.tempDir)
+}
+
+func (h *harness) auditEvents() ([]domain.AuditEvent, error) {
+	payload, err := os.ReadFile(h.tempDir + "/state.json")
+	if err != nil {
+		return nil, fmt.Errorf("read state snapshot: %w", err)
+	}
+	var state domain.State
+	if err := json.Unmarshal(payload, &state); err != nil {
+		return nil, fmt.Errorf("decode state snapshot: %w", err)
+	}
+	return state.AuditEvents, nil
 }
 
 func (h *harness) call(method string, path string, requestBody any, target any) error {
