@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	MaxZoneRunes       = 253
-	MaxAuthorityRunes  = 253
-	MaxNodeNameRunes   = 180
-	MaxRegionRunes     = 48
-	MinRequestKeyRunes = 8
-	MaxRequestKeyRunes = 64
-	MaxEntries         = 500
+	MaxZoneRunes        = 253
+	MaxAuthorityRunes   = 253
+	MaxNodeNameRunes    = 180
+	MaxRegionRunes      = 48
+	MinRequestKeyRunes  = 8
+	MaxRequestKeyRunes  = 64
+	MaxEntries          = 500
+	MaxReleaseNoteRunes = 500
 )
 
 type PlanCreateInput struct {
@@ -54,6 +55,12 @@ type ProbeInput struct {
 
 type AssessmentInput struct {
 	RequestKey string `json:"request_key"`
+}
+
+type ReleaseInput struct {
+	RequestKey     string `json:"request_key,omitempty"`
+	ReasonCategory string `json:"reason_category,omitempty"`
+	ReasonNote     string `json:"reason_note,omitempty"`
 }
 
 func NormalizePlanInput(input PlanCreateInput) PlanCreateInput {
@@ -247,6 +254,56 @@ func ValidateAssessmentInput(input AssessmentInput) error {
 		})
 	}
 	return nil
+}
+
+func NormalizeReleaseInput(input ReleaseInput) ReleaseInput {
+	input.RequestKey = strings.TrimSpace(input.RequestKey)
+	input.ReasonCategory = strings.TrimSpace(input.ReasonCategory)
+	input.ReasonNote = strings.TrimSpace(input.ReasonNote)
+	return input
+}
+
+func ValidateReleaseInput(input ReleaseInput) error {
+	input = NormalizeReleaseInput(input)
+	details := make(map[string]any)
+	if input.RequestKey != "" {
+		if err := validateRequestKey(input.RequestKey); err != nil {
+			details["request_key"] = err.Error()
+		}
+	}
+	if input.ReasonCategory != "" && !IsKnownReleaseReason(input.ReasonCategory) {
+		details["reason_category"] = "must be one of " + strings.Join(KnownReleaseReasons(), ", ")
+	}
+	if count := utf8.RuneCountInString(input.ReasonNote); count > MaxReleaseNoteRunes {
+		details["reason_note"] = "must be at most 500 characters"
+	}
+	if len(details) > 0 {
+		return Validation("release input is invalid", details)
+	}
+	return nil
+}
+
+// KnownReleaseReasons lists every reason category accepted on an early release.
+func KnownReleaseReasons() []string {
+	return []string{
+		string(ReleaseReasonPlannedComplete),
+		string(ReleaseReasonPlanCancelled),
+		string(ReleaseReasonNodeMaintenance),
+		string(ReleaseReasonOperatorOverride),
+		string(ReleaseReasonUnspecified),
+	}
+}
+
+func IsKnownReleaseReason(value string) bool {
+	switch ReleaseReason(value) {
+	case ReleaseReasonPlannedComplete,
+		ReleaseReasonPlanCancelled,
+		ReleaseReasonNodeMaintenance,
+		ReleaseReasonOperatorOverride,
+		ReleaseReasonUnspecified:
+		return true
+	}
+	return false
 }
 
 func validateRequestKey(value string) error {

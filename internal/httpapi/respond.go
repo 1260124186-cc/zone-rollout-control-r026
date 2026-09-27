@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -27,6 +28,33 @@ type failureBody struct {
 func decode(w http.ResponseWriter, r *http.Request, target any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, requestLimit)
 	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return domain.Validation("request body must contain valid JSON", map[string]any{
+			"reason": err.Error(),
+		})
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return domain.Validation("request body must contain one JSON value", nil)
+	}
+	return nil
+}
+
+// decodeOptional is like decode but treats a missing or empty body as the zero
+// value of target, so endpoints that historically accepted no body keep working.
+func decodeOptional(w http.ResponseWriter, r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, requestLimit)
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		return domain.Validation("request body could not be read", map[string]any{
+			"reason": err.Error(),
+		})
+	}
+	if len(bytes.TrimSpace(payload)) == 0 {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return domain.Validation("request body must contain valid JSON", map[string]any{
@@ -74,6 +102,7 @@ func statusCode(code domain.ErrorCode) int {
 		domain.CodeNodeUnavailable,
 		domain.CodeLeaseExpired,
 		domain.CodeLeaseNotClaimed,
+		domain.CodeLeaseReleaseConflict,
 		domain.CodeConflict:
 		return http.StatusConflict
 	case domain.CodeNoProbes:

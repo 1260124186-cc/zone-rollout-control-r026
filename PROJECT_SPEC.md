@@ -56,6 +56,7 @@ Zone Rollout Control 是面向 DNS 运维人员的 Go HTTP 控制面。它把区
 - `state`：`claimed`、`reported`、`released` 或 `expired`。
 - `claimed_at`、`expires_at`、`finished_at`。
 - `probe_id`：成功登记探针后的结果标识。
+- `release_reason_category`、`release_reason_note`、`release_request_key`：提前释放时固化的原因类别、现场说明和操作请求键；其他终态为空。
 
 ### LeaseGroup
 
@@ -107,6 +108,23 @@ ready --lease--> leased --report--> ready
 - 一个节点同一时刻最多有一个 `claimed` 租约。
 - 租约到期后不能提交探针。
 - 首次有效探针完成后，租约转为 `reported`，节点恢复 `ready`。
+
+### 租约提前释放
+
+`PATCH /v1/leases/{id}/release` 的正文全部可选，原有无正文请求继续可用：
+
+- `request_key`：操作请求键，留空表示不登记幂等键。
+- `reason_category`：原因类别，取值为 `planned_complete`、`plan_cancelled`、`node_maintenance`、`operator_override` 或 `unspecified`；未知类别返回 `validation_failed`。
+- `reason_note`：现场交接说明，最长 500 个字符。
+
+只有 `claimed` 租约能被提前释放。首次释放把原因类别、说明和操作请求键随 `released` 终态一起固化，并向审计追加一条 `released` 事件，属性包含租约、计划、操作请求键、原因类别和说明。计划、节点和最近判定的读取路径不因此改变。
+
+重复释放遵循终态不可改写：
+
+- 已释放租约：同请求键同内容重放返回原租约并复用首次原因，不追加审计；同请求键不同内容返回 `idempotency_conflict`；不同请求键（含对无正文首次释放改用有键请求）返回稳定的 `lease_release_conflict`。
+- `reported` 租约：返回 `invalid_state`，与既有行为一致。
+- `expired` 租约：释放接口保持幂等读取，返回原租约，不记录释放原因，也不追加释放审计。
+- 并发释放由存储写锁串行化，恰有一个请求释放成功，其余得到 `lease_release_conflict`。
 
 ### 区域版本规则
 
@@ -282,5 +300,6 @@ ready --lease--> leased --report--> ready
 2. 节点分配、租约唯一性、幂等重放和无可用节点冲突。
 3. 探针首写、同键重放、同键异载荷冲突和释放冲突。
 4. 一致性通过、审核触发、最新结果查询和幂等重放。
+5. 带原因释放、无正文释放兼容、重复释放复用首次原因、已上报租约冲突、未知类别拒绝和并发释放单一成功。
 
 每条探针使用独立临时目录，不访问外部网络，结束后关闭服务。

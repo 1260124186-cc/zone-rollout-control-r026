@@ -129,7 +129,16 @@ func (s *Service) Allocate(
 	return group, err
 }
 
-func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease, error) {
+func (s *Service) Release(
+	ctx context.Context,
+	leaseID string,
+	input domain.ReleaseInput,
+) (domain.NodeLease, error) {
+	input = domain.NormalizeReleaseInput(input)
+	if err := domain.ValidateReleaseInput(input); err != nil {
+		return domain.NodeLease{}, err
+	}
+	fingerprint := domain.ReleaseFingerprint(leaseID, input)
 	now := s.clock.Now().UTC()
 	var result domain.NodeLease
 	err := s.store.Write(ctx, func(state *domain.State) error {
@@ -137,11 +146,38 @@ func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease
 		if !ok {
 			return domain.NotFound("lease", leaseID)
 		}
-		if lease.State == domain.LeaseReleased || lease.State == domain.LeaseExpired {
+		switch lease.State {
+		case domain.LeaseReleased:
+			// A finished release is immutable: replays return the original
+			// lease with the first reason instead of rewriting the terminal state.
+			if lease.ReleaseRequestKey != input.RequestKey {
+				return domain.NewError(domain.CodeLeaseReleaseConflict, "lease was already released by another operation request", map[string]any{
+					"lease_id":              leaseID,
+					"request_key":           input.RequestKey,
+					"completed_request_key": lease.ReleaseRequestKey,
+				})
+			}
+			original := domain.ReleaseInput{
+				RequestKey:     lease.ReleaseRequestKey,
+				ReasonCategory: string(lease.ReleaseReasonCategory),
+				ReasonNote:     lease.ReleaseReasonNote,
+			}
+			if domain.ReleaseFingerprint(leaseID, original) != fingerprint {
+				return domain.NewError(domain.CodeIdempotencyConflict, "request key was reused with different release content", map[string]any{
+					"lease_id":    leaseID,
+					"request_key": input.RequestKey,
+				})
+			}
 			result = lease
 			return nil
-		}
-		if lease.State != domain.LeaseClaimed {
+		case domain.LeaseExpired:
+			// Expiry is a system terminal, not a release; it stays observable
+			// exactly as before and never records a release reason.
+			result = lease
+			return nil
+		case domain.LeaseClaimed:
+			// Continue with the release below.
+		default:
 			return domain.InvalidState("only a claimed lease can be released", map[string]any{
 				"lease_id": leaseID,
 				"state":    lease.State,
@@ -156,6 +192,11 @@ func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease
 		finishedAt := now
 		lease.State = domain.LeaseReleased
 		lease.FinishedAt = &finishedAt
+		if input.ReasonCategory != "" {
+			lease.ReleaseReasonCategory = domain.ReleaseReason(input.ReasonCategory)
+		}
+		lease.ReleaseReasonNote = input.ReasonNote
+		lease.ReleaseRequestKey = input.RequestKey
 		state.Leases[leaseID] = lease
 		if node.State == domain.NodeLeased {
 			node.State = domain.NodeReady
@@ -163,7 +204,20 @@ func (s *Service) Release(ctx context.Context, leaseID string) (domain.NodeLease
 			node.UpdatedAt = now
 			state.Nodes[node.ID] = node
 		}
-		store.AddAudit(state, s.ids, "lease", leaseID, "released", now, nil)
+		attributes := map[string]any{
+			"lease_id": leaseID,
+			"plan_id":  lease.PlanID,
+		}
+		if input.RequestKey != "" {
+			attributes["request_key"] = input.RequestKey
+		}
+		if input.ReasonCategory != "" {
+			attributes["reason_category"] = input.ReasonCategory
+		}
+		if input.ReasonNote != "" {
+			attributes["reason_note"] = input.ReasonNote
+		}
+		store.AddAudit(state, s.ids, "lease", leaseID, "released", now, attributes)
 		result = lease
 		return nil
 	})

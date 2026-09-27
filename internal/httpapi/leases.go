@@ -21,7 +21,14 @@ func (s *Server) allocateLeases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) releaseLease(w http.ResponseWriter, r *http.Request) {
-	lease, err := s.allocations.Release(r.Context(), r.PathValue("id"))
+	var input domain.ReleaseInput
+	// Releases historically accepted an empty body; keep that path valid while
+	// allowing an optional body carrying the reason and operation request key.
+	if err := decodeOptional(w, r, &input); err != nil {
+		sendError(w, r, err)
+		return
+	}
+	lease, err := s.allocations.Release(r.Context(), r.PathValue("id"), input)
 	if err != nil {
 		sendError(w, r, err)
 		return

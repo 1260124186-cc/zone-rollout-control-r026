@@ -27,6 +27,16 @@ const (
 	LeaseExpired  LeaseState = "expired"
 )
 
+type ReleaseReason string
+
+const (
+	ReleaseReasonPlannedComplete  ReleaseReason = "planned_complete"
+	ReleaseReasonPlanCancelled    ReleaseReason = "plan_cancelled"
+	ReleaseReasonNodeMaintenance  ReleaseReason = "node_maintenance"
+	ReleaseReasonOperatorOverride ReleaseReason = "operator_override"
+	ReleaseReasonUnspecified      ReleaseReason = "unspecified"
+)
+
 type Verdict string
 
 const (
@@ -84,15 +94,18 @@ type ResolverNode struct {
 }
 
 type NodeLease struct {
-	ID           string     `json:"id"`
-	PlanID       string     `json:"plan_id"`
-	NodeID       string     `json:"node_id"`
-	AllocationID string     `json:"allocation_id"`
-	State        LeaseState `json:"state"`
-	ClaimedAt    time.Time  `json:"claimed_at"`
-	ExpiresAt    time.Time  `json:"expires_at"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
-	ProbeID      string     `json:"probe_id,omitempty"`
+	ID                    string        `json:"id"`
+	PlanID                string        `json:"plan_id"`
+	NodeID                string        `json:"node_id"`
+	AllocationID          string        `json:"allocation_id"`
+	State                 LeaseState    `json:"state"`
+	ClaimedAt             time.Time     `json:"claimed_at"`
+	ExpiresAt             time.Time     `json:"expires_at"`
+	FinishedAt            *time.Time    `json:"finished_at,omitempty"`
+	ProbeID               string        `json:"probe_id,omitempty"`
+	ReleaseReasonCategory ReleaseReason `json:"release_reason_category,omitempty"`
+	ReleaseReasonNote     string        `json:"release_reason_note,omitempty"`
+	ReleaseRequestKey     string        `json:"release_request_key,omitempty"`
 }
 
 type LeaseGroup struct {

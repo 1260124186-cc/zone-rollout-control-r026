@@ -127,6 +127,20 @@ curl -sS -X PATCH http://127.0.0.1:8090/v1/leases/<lease_id>/probes \
   }'
 ```
 
+提前释放租约（正文可选，用于现场交接说明；不带正文的释放仍可用）：
+
+```bash
+curl -sS -X PATCH http://127.0.0.1:8090/v1/leases/<lease_id>/release \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "request_key": "release-request-0001",
+    "reason_category": "node_maintenance",
+    "reason_note": "机柜电源维护，提前结束"
+  }'
+```
+
+`reason_category` 可选值为 `planned_complete`、`plan_cancelled`、`node_maintenance`、`operator_override`、`unspecified`；`reason_note` 最长 500 字符。首次释放会把原因随终态固化并写入审计。同请求键同内容重放返回原租约并复用首次原因，同键异载荷返回 `idempotency_conflict`，其他操作请求改写终态返回 `lease_release_conflict`（均为 409）。
+
 请求一致性判定：
 
 ```bash
@@ -216,6 +230,7 @@ go run ./cmd/workflowprobe plan-revision-lifecycle
 go run ./cmd/workflowprobe node-lease-allocation
 go run ./cmd/workflowprobe probe-ingestion
 go run ./cmd/workflowprobe consistency-assessment
+go run ./cmd/workflowprobe lease-release-reason
 ```
 
 探针不访问外部网络，也不依赖已有状态文件。

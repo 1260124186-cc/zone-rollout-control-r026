@@ -135,6 +135,26 @@
       ]
     },
     {
+      "id": "lease-release-reason",
+      "name": "Reasoned lease release",
+      "entry": "PATCH /v1/leases/{id}/release",
+      "steps": [
+        "accept an optional request key, reason category, and handoff note while keeping empty-body releases valid",
+        "fix the first reason onto the released terminal and append it with lease, plan, and request to the audit",
+        "return the original lease with the first reason for identical replays without rewriting the terminal",
+        "serialize concurrent releases and reject reported leases, unknown categories, and conflicting requests"
+      ],
+      "success": "a claimed lease is released with a stable reason visible on the lease and audit, and replays return the same result",
+      "failure": "unknown categories fail validation, reported leases fail with invalid_state, and conflicting operation requests fail with stable 409 codes without state changes",
+      "verification": "workflowprobe lease-release-reason covers keyed and legacy releases, replay, conflicts, concurrency, expiry, and audit append behavior",
+      "module_ids": [
+        "httpapi",
+        "allocation",
+        "domain",
+        "storage"
+      ]
+    },
+    {
       "id": "consistency-assessment",
       "name": "Consistency assessment",
       "entry": "PATCH /v1/plans/{id}/assessments",

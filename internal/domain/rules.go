@@ -67,6 +67,20 @@ func ProbeFingerprint(leaseID string, input ProbeInput) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// ReleaseFingerprint covers the replay-relevant parts of a release request so
+// that the same request key with different release content can be detected.
+func ReleaseFingerprint(leaseID string, input ReleaseInput) string {
+	payload := fmt.Sprintf(
+		"%s|%s|%s|%s",
+		leaseID,
+		input.RequestKey,
+		input.ReasonCategory,
+		input.ReasonNote,
+	)
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
+}
+
 func BuildAssessment(
 	id string,
 	plan RolloutPlan,
